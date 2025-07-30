@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     IncPtr,
     DecPtr,
@@ -8,6 +8,12 @@ pub enum Token {
     Input,
     LoopStart,
     LoopEnd,
+    ParStart,
+    ParSep,
+    ParEnd,
+    LockStart,
+    LockEnd,
+    Wait,
 }
 
 pub fn lex(input: &str) -> Vec<Token> {
@@ -24,6 +30,12 @@ pub fn lex(input: &str) -> Vec<Token> {
             ',' => tokens.push(Token::Input),
             '[' => tokens.push(Token::LoopStart),
             ']' => tokens.push(Token::LoopEnd),
+            '{' => tokens.push(Token::ParStart),
+            '|' => tokens.push(Token::ParSep),
+            '}' => tokens.push(Token::ParEnd),
+            '(' => tokens.push(Token::LockStart),
+            ')' => tokens.push(Token::LockEnd),
+            '~' => tokens.push(Token::Wait),
             ';' => {
                 while chars.peek().is_some() && *chars.peek().unwrap() != '\n' {
                     chars.next();
