@@ -24,7 +24,7 @@ fn main() {
 
     let stdin = io::stdin();
     let stdout = io::stdout();
-    let mut interpreter = Interpreter::new(stdin, stdout);
+    let interpreter = Interpreter::new(stdin, stdout);
 
     interpreter.run(&nodes).unwrap();
 }
