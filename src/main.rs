@@ -1,3 +1,5 @@
+#![feature(trait_alias)]
+
 use std::{env, fs, io, process};
 
 use crate::interpreter::Interpreter;

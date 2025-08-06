@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{Read, Result, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -6,49 +6,34 @@ use std::time::Duration;
 
 use crate::parser::Node;
 
+pub trait RBound = Read + Send + 'static;
+pub trait WBound = Write + Send + 'static;
+
 const MEMORY_SIZE: usize = 30000;
 
-pub struct Interpreter<R: Read + Send + 'static, W: Write + Send + 'static> {
-    memory: Arc<Vec<AtomicU8>>,
-    locks: Arc<Vec<AtomicBool>>,
+pub struct Interpreter<R: RBound, W: WBound> {
     input: Arc<Mutex<R>>,
     output: Arc<Mutex<W>>,
 }
 
-impl<R: Read + Send + 'static, W: Write + Send + 'static> Interpreter<R, W> {
+impl<R: RBound, W: WBound> Interpreter<R, W> {
     pub fn new(input: R, output: W) -> Self {
-        let memory = Arc::new(
-            (0..MEMORY_SIZE)
-                .map(|_| AtomicU8::new(0))
-                .collect::<Vec<_>>(),
-        );
-        let locks = Arc::new(
-            (0..MEMORY_SIZE)
-                .map(|_| AtomicBool::new(false))
-                .collect::<Vec<_>>(),
-        );
-
         Interpreter {
-            memory,
-            locks,
             input: Arc::new(Mutex::new(input)),
             output: Arc::new(Mutex::new(output)),
         }
     }
 
-    pub fn run(&self, nodes: &[Node]) -> std::io::Result<()> {
-        let mut state = ThreadState::new(
-            self.memory.clone(),
-            self.locks.clone(),
-            self.input.clone(),
-            self.output.clone(),
-        );
-        state.run(nodes);
+    pub fn run(&self, nodes: &[Node]) -> Result<()> {
+        let memory = Arc::new((0..MEMORY_SIZE).map(|_| AtomicU8::new(0)).collect());
+        let locks = Arc::new((0..MEMORY_SIZE).map(|_| AtomicBool::new(false)).collect());
+
+        ThreadState::new(memory, locks, self.input.clone(), self.output.clone()).run(nodes);
         Ok(())
     }
 }
 
-struct ThreadState<R: Read + Send + 'static, W: Write + Send + 'static> {
+struct ThreadState<R: RBound, W: WBound> {
     memory: Arc<Vec<AtomicU8>>,
     locks: Arc<Vec<AtomicBool>>,
     input: Arc<Mutex<R>>,
@@ -57,7 +42,7 @@ struct ThreadState<R: Read + Send + 'static, W: Write + Send + 'static> {
     lock_stack: Vec<usize>,
 }
 
-impl<R: Read + Send + 'static, W: Write + Send + 'static> ThreadState<R, W> {
+impl<R: RBound, W: WBound> ThreadState<R, W> {
     fn new(
         memory: Arc<Vec<AtomicU8>>,
         locks: Arc<Vec<AtomicBool>>,
