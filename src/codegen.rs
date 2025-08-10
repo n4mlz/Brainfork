@@ -40,7 +40,7 @@ impl Codegen {
         self.out
     }
 
-    fn wln(&mut self, s: &str) {
+    fn line(&mut self, s: &str) {
         for _ in 0..self.indent {
             self.out.push_str("  ");
         }
@@ -81,16 +81,16 @@ impl Codegen {
     /// Create a thunk from an arbitrary sequence of nodes and defer its emission
     pub fn defer_thunk(&mut self, name: &str, nodes: &[Node]) {
         let ir = self.with_temp_buffer(|this| {
-            this.wln(&format!(
+            this.line(&format!(
                 "define internal void @thunk_{name}(%State* nocapture nonnull %S) {{"
             ));
             this.indent += 1;
             this.label("entry");
             emit::emit_nodes(this, "%S", nodes);
-            this.wln("ret void");
+            this.line("ret void");
             this.indent -= 1;
-            this.wln("}");
-            this.wln("");
+            this.line("}");
+            this.line("");
         });
         self.push_def(ir);
     }
@@ -98,106 +98,106 @@ impl Codegen {
     /// Defer generation of thread_start_* wrapper function
     pub fn defer_thread_start(&mut self, tname: &str) {
         let ir = self.with_temp_buffer(|this| {
-            this.wln(&format!(
+            this.line(&format!(
                 "define internal i8* @thread_start_{tname}(i8* %arg) nounwind {{"
             ));
             this.indent += 1;
-            this.wln("%S = bitcast i8* %arg to %State*");
-            this.wln(&format!("call void @thunk_{tname}(%State* %S)"));
-            this.wln("ret i8* null");
+            this.line("%S = bitcast i8* %arg to %State*");
+            this.line(&format!("call void @thunk_{tname}(%State* %S)"));
+            this.line("ret i8* null");
             this.indent -= 1;
-            this.wln("}");
-            this.wln("");
+            this.line("}");
+            this.line("");
         });
         self.push_def(ir);
     }
 
     fn preamble(&mut self) {
         // Shared tape and mutex slot slab (memory allocated at program start)
-        self.wln(&format!(
+        self.line(&format!(
             "@tape = internal global [{TAPE_LEN} x i8] zeroinitializer"
         ));
-        self.wln("@mutex_slab = internal global i8* null");
-        self.wln(
+        self.line("@mutex_slab = internal global i8* null");
+        self.line(
             "%State = type { i8*, i64, i8*, i64*, i64, i64 } ; (tape, ptr, slab, stack, sp, cap)",
         );
-        self.wln("");
+        self.line("");
         decl::decl_externals(self);
         decl::define_runtime_helpers(self);
-        self.wln("");
+        self.line("");
     }
 
     fn define_main(&mut self) {
-        self.wln("define i32 @main() {");
+        self.line("define i32 @main() {");
         self.indent += 1;
         self.label("entry");
         // Allocate & initialize mutex_slab
-        self.wln(&format!("%slab_bytes = mul i64 {TAPE_LEN}, {MUTEX_STRIDE}"));
-        self.wln("%slab = call i8* @malloc(i64 %slab_bytes)");
-        self.wln("store i8* %slab, i8** @mutex_slab");
+        self.line(&format!("%slab_bytes = mul i64 {TAPE_LEN}, {MUTEX_STRIDE}"));
+        self.line("%slab = call i8* @malloc(i64 %slab_bytes)");
+        self.line("store i8* %slab, i8** @mutex_slab");
         // pthread_mutex_init for every cell
-        self.wln("%i = alloca i64");
-        self.wln("store i64 0, i64* %i");
-        self.wln("br label %init.loop");
+        self.line("%i = alloca i64");
+        self.line("store i64 0, i64* %i");
+        self.line("br label %init.loop");
         self.label("init.loop");
-        self.wln("%cur = load i64, i64* %i");
-        self.wln(&format!("%cond = icmp slt i64 %cur, {TAPE_LEN}"));
-        self.wln("br i1 %cond, label %init.body, label %init.end");
+        self.line("%cur = load i64, i64* %i");
+        self.line(&format!("%cond = icmp slt i64 %cur, {TAPE_LEN}"));
+        self.line("br i1 %cond, label %init.body, label %init.end");
         self.label("init.body");
-        self.wln("%sl0 = load i8*, i8** @mutex_slab");
-        self.wln(&format!("%off = mul i64 %cur, {MUTEX_STRIDE}"));
-        self.wln("%slot = getelementptr i8, i8* %sl0, i64 %off");
-        self.wln("call i32 @pthread_mutex_init(i8* %slot, i8* null)");
-        self.wln("%cur1 = add i64 %cur, 1");
-        self.wln("store i64 %cur1, i64* %i");
-        self.wln("br label %init.loop");
+        self.line("%sl0 = load i8*, i8** @mutex_slab");
+        self.line(&format!("%off = mul i64 %cur, {MUTEX_STRIDE}"));
+        self.line("%slot = getelementptr i8, i8* %sl0, i64 %off");
+        self.line("call i32 @pthread_mutex_init(i8* %slot, i8* null)");
+        self.line("%cur1 = add i64 %cur, 1");
+        self.line("store i64 %cur1, i64* %i");
+        self.line("br label %init.loop");
         self.label("init.end");
         // Allocate & initialize initial State
-        self.wln("%st_end = getelementptr %State, %State* null, i32 1");
-        self.wln("%st_bytes = ptrtoint %State* %st_end to i64");
-        self.wln("%st = call i8* @malloc(i64 %st_bytes)");
-        self.wln("%S = bitcast i8* %st to %State*");
-        self.wln(&format!(
+        self.line("%st_end = getelementptr %State, %State* null, i32 1");
+        self.line("%st_bytes = ptrtoint %State* %st_end to i64");
+        self.line("%st = call i8* @malloc(i64 %st_bytes)");
+        self.line("%S = bitcast i8* %st to %State*");
+        self.line(&format!(
             "%base = getelementptr [{TAPE_LEN} x i8], [{TAPE_LEN} x i8]* @tape, i64 0, i64 0"
         ));
         let f0 = self.fresh("fld");
-        self.wln(&format!(
+        self.line(&format!(
             "{f0} = getelementptr %State, %State* %S, i32 0, i32 0"
         ));
-        self.wln(&format!("store i8* %base, i8** {f0}"));
+        self.line(&format!("store i8* %base, i8** {f0}"));
         let f1 = self.fresh("fld");
-        self.wln(&format!(
+        self.line(&format!(
             "{f1} = getelementptr %State, %State* %S, i32 0, i32 1"
         ));
-        self.wln(&format!("store i64 0, i64* {f1}"));
-        self.wln("%sl = load i8*, i8** @mutex_slab");
+        self.line(&format!("store i64 0, i64* {f1}"));
+        self.line("%sl = load i8*, i8** @mutex_slab");
         let f2 = self.fresh("fld");
-        self.wln(&format!(
+        self.line(&format!(
             "{f2} = getelementptr %State, %State* %S, i32 0, i32 2"
         ));
-        self.wln(&format!("store i8* %sl, i8** {f2}"));
-        self.wln(&format!("%lsz = mul i64 {LOCK_STACK_INIT}, 8"));
-        self.wln("%stk = call i8* @malloc(i64 %lsz)");
-        self.wln("%stk64 = bitcast i8* %stk to i64*");
+        self.line(&format!("store i8* %sl, i8** {f2}"));
+        self.line(&format!("%lsz = mul i64 {LOCK_STACK_INIT}, 8"));
+        self.line("%stk = call i8* @malloc(i64 %lsz)");
+        self.line("%stk64 = bitcast i8* %stk to i64*");
         let f3 = self.fresh("fld");
-        self.wln(&format!(
+        self.line(&format!(
             "{f3} = getelementptr %State, %State* %S, i32 0, i32 3"
         ));
-        self.wln(&format!("store i64* %stk64, i64** {f3}"));
+        self.line(&format!("store i64* %stk64, i64** {f3}"));
         let f4 = self.fresh("fld");
-        self.wln(&format!(
+        self.line(&format!(
             "{f4} = getelementptr %State, %State* %S, i32 0, i32 4"
         ));
-        self.wln(&format!("store i64 0, i64* {f4}"));
+        self.line(&format!("store i64 0, i64* {f4}"));
         let f5 = self.fresh("fld");
-        self.wln(&format!(
+        self.line(&format!(
             "{f5} = getelementptr %State, %State* %S, i32 0, i32 5"
         ));
-        self.wln(&format!("store i64 {LOCK_STACK_INIT}, i64* {f5}"));
+        self.line(&format!("store i64 {LOCK_STACK_INIT}, i64* {f5}"));
         // Run top-level program
-        self.wln("call void @thunk_main(%State* %S)");
-        self.wln("ret i32 0");
+        self.line("call void @thunk_main(%State* %S)");
+        self.line("ret i32 0");
         self.indent -= 1;
-        self.wln("}");
+        self.line("}");
     }
 }
