@@ -139,8 +139,9 @@ impl Codegen {
         // 全セル分の pthread_mutex_init
         self.wln("%i = alloca i64");
         self.wln("store i64 0, i64* %i");
+        self.wln("br label %init.loop"); // ← 追加: entry ブロックを正しく終了
         self.label("init.loop");
-        self.wln(&format!("%cur = load i64, i64* %i"));
+        self.wln("%cur = load i64, i64* %i");
         self.wln(&format!("%cond = icmp slt i64 %cur, {TAPE_LEN}"));
         self.wln("br i1 %cond, label %init.body, label %init.end");
         self.label("init.body");
@@ -153,9 +154,10 @@ impl Codegen {
         self.wln("br label %init.loop");
         self.label("init.end");
         // 初期 State を確保・初期化
-        self.wln(
-            "%st_bytes = ptrtoint (%State* getelementptr(%State, %State* null, i32 1) to i64)",
-        ); // 定数式 GEP はこのまま
+        // 以前: 無効な表記 ptrtoint (%State* getelementptr(...)) to i64
+        // 修正: GEP を分離してオペランドとして渡す
+        self.wln("%st_end = getelementptr %State, %State* null, i32 1");
+        self.wln("%st_bytes = ptrtoint %State* %st_end to i64");
         self.wln("%st = call i8* @malloc(i64 %st_bytes)");
         self.wln("%S = bitcast i8* %st to %State*");
         self.wln(&format!(

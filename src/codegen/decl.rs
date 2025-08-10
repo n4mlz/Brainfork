@@ -46,11 +46,12 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.wln("%sp  = load i64,  i64*  %fld_sp");
     g.wln("%fld_cap = getelementptr %State, %State* %S, i32 0, i32 5");
     g.wln("%cap = load i64,  i64*  %fld_cap");
+    // fld_buf を分岐前に計算して優位性を確保
+    g.wln("%fld_buf = getelementptr %State, %State* %S, i32 0, i32 3");
     g.wln("%need_grow = icmp eq i64 %sp, %cap");
     g.wln("br i1 %need_grow, label %grow, label %push");
 
     g.wln("grow:");
-    g.wln("%fld_buf = getelementptr %State, %State* %S, i32 0, i32 3");
     g.wln("%oldbuf = load i64*, i64** %fld_buf");
     g.wln("%oldcap = load i64, i64* %fld_cap");
     g.wln("%newcap = shl i64 %oldcap, 1");

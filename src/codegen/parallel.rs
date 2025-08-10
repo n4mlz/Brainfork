@@ -20,7 +20,13 @@ pub fn emit_parallel(g: &mut Codegen, parent_s: &str, branches: &[Vec<Node>]) {
     g.wln(&format!("%threads{pid} = alloca [{} x i64]", k));
     for i in 0..k {
         let child = fresh(g, "Schild");
-        g.wln(&format!("%st_bytes{pid}_{i} = ptrtoint (%State* getelementptr(%State, %State* null, i32 1) to i64)"));
+        // サイズ計算: GEP を分離
+        g.wln(&format!(
+            "%st_end{pid}_{i} = getelementptr %State, %State* null, i32 1"
+        ));
+        g.wln(&format!(
+            "%st_bytes{pid}_{i} = ptrtoint %State* %st_end{pid}_{i} to i64"
+        ));
         g.wln(&format!(
             "%st{pid}_{i} = call i8* @malloc(i64 %st_bytes{pid}_{i})"
         ));
