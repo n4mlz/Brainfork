@@ -7,15 +7,15 @@ mod emit;
 mod parallel;
 
 pub const TAPE_LEN: i64 = 30_000;
-pub const MUTEX_STRIDE: i64 = 64; // pthread_mutex_t のサイズが不明なので余裕を確保
+pub const MUTEX_STRIDE: i64 = 64;
 pub const LOCK_STACK_INIT: i64 = 16;
 
 pub fn generate_ir(nodes: &[Node]) -> String {
     let mut cg = Codegen::new();
-    cg.preamble(); // globals, %State, declare群, ランタイム関数定義
-    cg.defer_thunk("main", nodes); // main 用 thunk を遅延定義
-    cg.define_main(); // @main 初期化 → @thunk_main 呼び出し
-    cg.flush_deferred(); // 末尾に全遅延関数を出力
+    cg.preamble(); // globals, %State, declarations, runtime helper definitions
+    cg.defer_thunk("main", nodes); // Defer creation of thunk for main
+    cg.define_main(); // Initialize @main then call @thunk_main
+    cg.flush_deferred(); // Emit all deferred function definitions at the end
     cg.finish()
 }
 
@@ -23,18 +23,17 @@ pub struct Codegen {
     out: String,
     indent: usize,
     pub uniq: usize,
-    deferred: Vec<String>, // 遅延する関数定義
+    deferred: Vec<String>, // Function definitions deferred for later emission
 }
 
 impl Codegen {
     fn new() -> Self {
-        let this = Self {
+        Self {
             out: String::with_capacity(32 * 1024),
             indent: 0,
             uniq: 0,
             deferred: Vec::new(),
-        };
-        this
+        }
     }
 
     pub fn finish(self) -> String {
@@ -66,20 +65,20 @@ impl Codegen {
     }
 
     fn with_temp_buffer<F: FnOnce(&mut Self)>(&mut self, f: F) -> String {
-        // swap out current buffer & indent
+        // Temporarily swap output buffer & indent to build a deferred definition
         let mut saved_out = String::new();
         std::mem::swap(&mut self.out, &mut saved_out);
         let saved_indent = self.indent;
         self.indent = 0;
         f(self);
         let produced = std::mem::take(&mut self.out);
-        // restore
+        // Restore previous buffer & indent
         self.out = saved_out;
         self.indent = saved_indent;
         produced
     }
 
-    /// 任意のノード列から thunk を作成し遅延出力
+    /// Create a thunk from an arbitrary sequence of nodes and defer its emission
     pub fn defer_thunk(&mut self, name: &str, nodes: &[Node]) {
         let ir = self.with_temp_buffer(|this| {
             this.wln(&format!(
@@ -96,7 +95,7 @@ impl Codegen {
         self.push_def(ir);
     }
 
-    /// thread_start_* ラッパー関数を遅延生成
+    /// Defer generation of thread_start_* wrapper function
     pub fn defer_thread_start(&mut self, tname: &str) {
         let ir = self.with_temp_buffer(|this| {
             this.wln(&format!(
@@ -114,7 +113,7 @@ impl Codegen {
     }
 
     fn preamble(&mut self) {
-        // 共有テープと mutex スロットのスラブ（実体アドレスは起動時に確保）
+        // Shared tape and mutex slot slab (memory allocated at program start)
         self.wln(&format!(
             "@tape = internal global [{TAPE_LEN} x i8] zeroinitializer"
         ));
@@ -124,7 +123,7 @@ impl Codegen {
         );
         self.wln("");
         decl::decl_externals(self);
-        decl::define_runtime_helpers(self); // push/pop, bf_* 命令など
+        decl::define_runtime_helpers(self);
         self.wln("");
     }
 
@@ -132,14 +131,14 @@ impl Codegen {
         self.wln("define i32 @main() {");
         self.indent += 1;
         self.label("entry");
-        // mutex_slab を確保 & 初期化
+        // Allocate & initialize mutex_slab
         self.wln(&format!("%slab_bytes = mul i64 {TAPE_LEN}, {MUTEX_STRIDE}"));
         self.wln("%slab = call i8* @malloc(i64 %slab_bytes)");
         self.wln("store i8* %slab, i8** @mutex_slab");
-        // 全セル分の pthread_mutex_init
+        // pthread_mutex_init for every cell
         self.wln("%i = alloca i64");
         self.wln("store i64 0, i64* %i");
-        self.wln("br label %init.loop"); // ← 追加: entry ブロックを正しく終了
+        self.wln("br label %init.loop");
         self.label("init.loop");
         self.wln("%cur = load i64, i64* %i");
         self.wln(&format!("%cond = icmp slt i64 %cur, {TAPE_LEN}"));
@@ -153,9 +152,7 @@ impl Codegen {
         self.wln("store i64 %cur1, i64* %i");
         self.wln("br label %init.loop");
         self.label("init.end");
-        // 初期 State を確保・初期化
-        // 以前: 無効な表記 ptrtoint (%State* getelementptr(...)) to i64
-        // 修正: GEP を分離してオペランドとして渡す
+        // Allocate & initialize initial State
         self.wln("%st_end = getelementptr %State, %State* null, i32 1");
         self.wln("%st_bytes = ptrtoint %State* %st_end to i64");
         self.wln("%st = call i8* @malloc(i64 %st_bytes)");
@@ -197,7 +194,7 @@ impl Codegen {
             "{f5} = getelementptr %State, %State* %S, i32 0, i32 5"
         ));
         self.wln(&format!("store i64 {LOCK_STACK_INIT}, i64* {f5}"));
-        // トップレベル実行
+        // Run top-level program
         self.wln("call void @thunk_main(%State* %S)");
         self.wln("ret i32 0");
         self.indent -= 1;

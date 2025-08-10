@@ -1,4 +1,4 @@
-use super::{Codegen, LOCK_STACK_INIT, MUTEX_STRIDE, TAPE_LEN};
+use super::{Codegen, MUTEX_STRIDE};
 
 pub fn decl_externals(g: &mut Codegen) {
     g.wln("declare i32 @putchar(i32)");
@@ -11,12 +11,12 @@ pub fn decl_externals(g: &mut Codegen) {
     g.wln("declare i32 @pthread_mutex_init(i8*, i8*)");
     g.wln("declare i32 @pthread_mutex_lock(i8*)");
     g.wln("declare i32 @pthread_mutex_unlock(i8*)");
-    // memcpy intrinsic（stack の拡張に使用）
+    // memcpy intrinsic (used for expanding the lock stack)
     g.wln("declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture writeonly, i8* nocapture readonly, i64, i1 immarg)");
 }
 
 pub fn define_runtime_helpers(g: &mut Codegen) {
-    // --- GEP: 現在セルのポインタ ---
+    // GEP: pointer to current cell
     g.wln("define internal i8* @bf_gep_cell_ptr(%State* nocapture nonnull %S) alwaysinline nounwind {");
     g.indent += 1;
     g.wln("%fld_base = getelementptr %State, %State* %S, i32 0, i32 0");
@@ -28,7 +28,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- ロックスロットのアドレス（mutex_slab + idx*stride） ---
+    // Address of lock slot (mutex_slab + idx * stride)
     g.wln("define internal i8* @bf_lock_slot_addr(%State* nocapture nonnull %S, i64 %idx) alwaysinline nounwind {");
     g.indent += 1;
     g.wln("%fld_slab = getelementptr %State, %State* %S, i32 0, i32 2");
@@ -39,14 +39,14 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- push_lock(%S, idx) : 動的拡張あり ---
+    // push_lock(%S, idx) with dynamic growth
     g.wln("define internal void @push_lock(%State* nocapture nonnull %S, i64 %idx) nounwind {");
     g.indent += 1;
     g.wln("%fld_sp = getelementptr %State, %State* %S, i32 0, i32 4");
     g.wln("%sp  = load i64,  i64*  %fld_sp");
     g.wln("%fld_cap = getelementptr %State, %State* %S, i32 0, i32 5");
     g.wln("%cap = load i64,  i64*  %fld_cap");
-    // fld_buf を分岐前に計算して優位性を確保
+    // Precompute fld_buf before branch for dominance
     g.wln("%fld_buf = getelementptr %State, %State* %S, i32 0, i32 3");
     g.wln("%need_grow = icmp eq i64 %sp, %cap");
     g.wln("br i1 %need_grow, label %grow, label %push");
@@ -77,7 +77,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- pop_lock(%S) -> i64（空は未定義：パーサ側で検査前提） ---
+    // pop_lock(%S) -> i64 (caller assumes non-empty stack)
     g.wln("define internal i64 @pop_lock(%State* nocapture nonnull %S) nounwind {");
     g.indent += 1;
     g.wln("%fld_sp2 = getelementptr %State, %State* %S, i32 0, i32 4");
@@ -92,7 +92,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- 基本命令: ポインタ移動 ---
+    // Primitive: pointer movement
     g.wln("define internal void @bf_inc_ptr(%State* nocapture nonnull %S, i64 %delta) alwaysinline nounwind {");
     g.indent += 1;
     g.wln("%fld_ptr = getelementptr %State,%State* %S, i32 0, i32 1");
@@ -103,7 +103,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- 基本命令: セル加算（非 atomic） ---
+    // Primitive: add to cell (non-atomic)
     g.wln("define internal void @bf_add_cell(%State* nocapture nonnull %S, i32 %delta) alwaysinline nounwind {");
     g.indent += 1;
     g.wln("%p = call i8* @bf_gep_cell_ptr(%State* %S)");
@@ -115,7 +115,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- 出力 ---
+    // Output
     g.wln("define internal void @bf_output(%State* nocapture nonnull %S) nounwind {");
     g.indent += 1;
     g.wln("%p = call i8* @bf_gep_cell_ptr(%State* %S)");
@@ -126,7 +126,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- 入力 ---
+    // Input
     g.wln("define internal void @bf_input(%State* nocapture nonnull %S) nounwind {");
     g.indent += 1;
     g.wln("%c = call i32 @getchar()");
@@ -139,7 +139,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- 待機（0.1s * ticks）---
+    // Wait (0.1s * ticks)
     g.wln("define internal void @bf_wait(i32 %ticks) nounwind {");
     g.indent += 1;
     g.wln("%u = mul i32 %ticks, 100000");
@@ -148,7 +148,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- ロック取得（成功後に push） ---
+    // Acquire lock (then push)
     g.wln("define internal void @bf_lock_acquire(%State* nocapture nonnull %S) nounwind {");
     g.indent += 1;
     g.wln("%fld_ptr2 = getelementptr %State,%State* %S, i32 0, i32 1");
@@ -160,7 +160,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.wln("}");
 
-    // --- ロック解放（pop した idx に対して unlock） ---
+    // Release lock (pop then unlock)
     g.wln("define internal void @bf_lock_release(%State* nocapture nonnull %S) nounwind {");
     g.indent += 1;
     g.wln("%idx = call i64 @pop_lock(%State* %S)");

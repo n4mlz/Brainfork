@@ -1,26 +1,25 @@
-use super::{Codegen, LOCK_STACK_INIT, emit};
+use super::{Codegen, LOCK_STACK_INIT};
 
 use crate::parser::Node;
 
-/// 並列ブロック `{ A | B | ... }`
-/// 親 %S を参照しつつ、各枝に独立 State を用意して起動・join。
+/// Prepare independent State for each branch while sharing parent %S, then start and join threads
 pub fn emit_parallel(g: &mut Codegen, parent_s: &str, branches: &[Vec<Node>]) {
     let pid = g.uniq;
     g.uniq += 1;
     let k = branches.len();
 
-    // 1) 各枝の thunk / thread_start を遅延定義バッファへ
+    // Defer thunk / thread_start for each branch
     for (i, b) in branches.iter().enumerate() {
         let tname = format!("p{pid}_{i}");
         g.defer_thunk(&tname, b);
         g.defer_thread_start(&tname);
     }
 
-    // 2) 親関数本体で threads 配列を確保して起動
-    g.wln(&format!("%threads{pid} = alloca [{} x i64]", k));
+    // In parent function: allocate threads array and launch
+    g.wln(&format!("%threads{pid} = alloca [{k} x i64]"));
     for i in 0..k {
         let child = fresh(g, "Schild");
-        // サイズ計算: GEP を分離
+        // Separate GEP for struct size calculation
         g.wln(&format!(
             "%st_end{pid}_{i} = getelementptr %State, %State* null, i32 1"
         ));
@@ -102,7 +101,7 @@ pub fn emit_parallel(g: &mut Codegen, parent_s: &str, branches: &[Vec<Node>]) {
         g.wln(&format!("call i32 @pthread_create(i64* %tptr{pid}_{i}, i8* null, i8* (i8*)* @thread_start_p{pid}_{i}, i8* %arg{pid}_{i})"));
     }
 
-    // 3) join
+    // Join all threads
     for i in 0..k {
         g.wln(&format!(
             "%tval{pid}_{i} = getelementptr [{k} x i64], [{k} x i64]* %threads{pid}, i64 0, i64 {i}"
