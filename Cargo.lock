@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "brainfock"
+name = "brainfork"
 version = "0.1.0"
