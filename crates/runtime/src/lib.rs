@@ -39,8 +39,7 @@ fn hist() -> &'static Mutex<HashMap<i64, CellHist>> {
     HIST.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsan_write(s: *const State) {
+unsafe fn tsan_access(s: *const State, is_write: bool) {
     let s = unsafe { s.as_ref().expect("State pointer is null") };
 
     let idx = s.ptr_index;
@@ -49,55 +48,39 @@ pub unsafe extern "C" fn tsan_write(s: *const State) {
         return;
     }
 
-    let tid = unsafe { libc::pthread_self() as usize as u64 };
+    let tid = unsafe { libc::pthread_self() } as usize as u64;
     let mut map = hist().lock().unwrap();
     let entry = map.entry(idx).or_default();
 
     if let Some(prev) = &entry.last
         && prev.tid != tid
         && prev.lockset.is_disjoint(&cur_locks)
+        && (is_write || prev.is_write)
     {
         eprintln!(
-            "[TSAN] race(write) cell={} prev{{tid:{}, write:{}}} now{{tid:{}, write:true}}",
-            idx, prev.tid, prev.is_write, tid
+            "[TSAN] race({}) cell={} prev{{tid:{}, write:{}}} now{{tid:{}, write:{}}}",
+            if is_write { "write" } else { "read" },
+            idx,
+            prev.tid,
+            prev.is_write,
+            tid,
+            is_write
         );
     }
 
     entry.last = Some(Access {
         tid,
-        is_write: true,
+        is_write,
         lockset: cur_locks,
     });
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsan_write(s: *const State) {
+    unsafe { tsan_access(s, true) };
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsan_read(s: *const State) {
-    let s = unsafe { s.as_ref().expect("State pointer is null") };
-
-    let idx = s.ptr_index;
-    let cur_locks = current_lockset(s);
-    if cur_locks.contains(&idx) {
-        return;
-    }
-
-    let tid = unsafe { libc::pthread_self() as usize as u64 };
-    let mut map = hist().lock().unwrap();
-    let entry = map.entry(idx).or_default();
-
-    if let Some(prev) = &entry.last
-        && prev.is_write
-        && prev.tid != tid
-        && prev.lockset.is_disjoint(&cur_locks)
-    {
-        eprintln!(
-            "[TSAN] race(read)  cell={} prev{{tid:{}, write:true}} now{{tid:{}, write:false}}",
-            idx, prev.tid, tid
-        );
-    }
-
-    entry.last = Some(Access {
-        tid,
-        is_write: false,
-        lockset: cur_locks,
-    });
+    unsafe { tsan_access(s, false) };
 }
