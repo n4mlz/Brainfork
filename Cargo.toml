@@ -2,3 +2,4 @@
 members = ["crates/engine", "crates/runtime"]
 
 [workspace.dependencies]
+libc = "0.2"
