@@ -1,7 +1,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -34,10 +34,7 @@ struct CellHist {
     last: Option<Access>,
 }
 
-static HIST: OnceLock<Mutex<HashMap<i64, CellHist>>> = OnceLock::new();
-fn hist() -> &'static Mutex<HashMap<i64, CellHist>> {
-    HIST.get_or_init(|| Mutex::new(HashMap::new()))
-}
+static HIST: LazyLock<Mutex<HashMap<i64, CellHist>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 unsafe fn tsan_access(s: *const State, is_write: bool) {
     let s = unsafe { s.as_ref().expect("State pointer is null") };
@@ -49,7 +46,7 @@ unsafe fn tsan_access(s: *const State, is_write: bool) {
     }
 
     let tid = unsafe { libc::pthread_self() } as usize as u64;
-    let mut map = hist().lock().unwrap();
+    let mut map = HIST.lock().unwrap();
     let entry = map.entry(idx).or_default();
 
     if let Some(prev) = &entry.last
