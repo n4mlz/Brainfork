@@ -10,5 +10,9 @@ mkdir -p dist
 cargo build -p engine
 cp -f target/debug/engine ${SCRIPT_DIR}/dist/engine
 
-RUSTFLAGS="--emit=llvm-ir" cargo build -p runtime
-cp -f "$(ls -t target/debug/deps/runtime-*.ll | head -n1)" dist/runtime.ll
+RUSTFLAGS="--emit=obj" cargo build -p runtime
+cp target/debug/libruntime.a dist/libruntime.a
+
+cargo run compile sample.bf > dist/prog.ll
+
+clang dist/prog.ll dist/libruntime.a -o dist/out
