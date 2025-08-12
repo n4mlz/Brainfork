@@ -1,4 +1,4 @@
 [workspace]
-members = ["crates/engine"]
+members = ["crates/engine", "crates/runtime"]
 
 [workspace.dependencies]
