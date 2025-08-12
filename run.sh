@@ -2,17 +2,18 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+cd $(dirname $0)
 
 mkdir -p dist
 
 cargo build -p engine
-cp -f target/debug/engine ${SCRIPT_DIR}/dist/engine
+cp -f target/debug/engine dist/engine
 
 RUSTFLAGS="--emit=obj" cargo build -p runtime
 cp target/debug/libruntime.a dist/libruntime.a
 
-cargo run compile sample.bf > dist/prog.ll
+cargo run compile sample.bf --sanitize > dist/prog.ll
 
 clang dist/prog.ll dist/libruntime.a -o dist/out
+
+./dist/out
