@@ -10,8 +10,8 @@ pub const TAPE_LEN: i64 = 30_000;
 pub const MUTEX_STRIDE: i64 = 64;
 pub const LOCK_STACK_INIT: i64 = 16;
 
-pub fn generate_ir(nodes: &[Node]) -> String {
-    let mut cg = Codegen::new();
+pub fn generate_ir(nodes: &[Node], sanitize: bool) -> String {
+    let mut cg = Codegen::new(sanitize);
     cg.preamble(); // globals, %State, declarations, runtime helper definitions
     cg.defer_thunk("main", nodes); // Defer creation of thunk for main
     cg.define_main(); // Initialize @main then call @thunk_main
@@ -24,15 +24,17 @@ pub struct Codegen {
     indent: usize,
     pub uniq: usize,
     deferred: Vec<String>, // Function definitions deferred for later emission
+    pub sanitize: bool,    // Whether to generate code with sanitization checks
 }
 
 impl Codegen {
-    fn new() -> Self {
+    fn new(sanitize: bool) -> Self {
         Self {
             out: String::with_capacity(32 * 1024),
             indent: 0,
             uniq: 0,
             deferred: Vec::new(),
+            sanitize,
         }
     }
 

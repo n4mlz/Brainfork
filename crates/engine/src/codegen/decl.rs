@@ -11,6 +11,11 @@ pub fn decl_externals(g: &mut Codegen) {
     g.line("declare i32 @pthread_mutex_init(i8*, i8*)");
     g.line("declare i32 @pthread_mutex_lock(i8*)");
     g.line("declare i32 @pthread_mutex_unlock(i8*)");
+
+    // Thread sanitizer functions
+    g.line("declare void @tsan_read(%State*)");
+    g.line("declare void @tsan_write(%State*)");
+
     // memcpy intrinsic (used for expanding the lock stack)
     g.line("declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture writeonly, i8* nocapture readonly, i64, i1 immarg)");
 }
@@ -107,9 +112,15 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("define internal void @bf_add_cell(%State* nocapture nonnull %S, i32 %delta) alwaysinline nounwind {");
     g.indent += 1;
     g.line("%p = call i8* @bf_gep_cell_ptr(%State* %S)");
+    if g.sanitize {
+        g.line("call void @tsan_read(%State* %S)");
+    }
     g.line("%v0 = load i8, i8* %p");
     g.line("%d8 = trunc i32 %delta to i8");
     g.line("%v1 = add i8 %v0, %d8");
+    if g.sanitize {
+        g.line("call void @tsan_write(%State* %S)");
+    }
     g.line("store i8 %v1, i8* %p");
     g.line("ret void");
     g.indent -= 1;
@@ -119,6 +130,9 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("define internal void @bf_output(%State* nocapture nonnull %S) nounwind {");
     g.indent += 1;
     g.line("%p = call i8* @bf_gep_cell_ptr(%State* %S)");
+    if g.sanitize {
+        g.line("call void @tsan_read(%State* %S)");
+    }
     g.line("%v = load i8, i8* %p");
     g.line("%w = zext i8 %v to i32");
     g.line("call i32 @putchar(i32 %w)");
@@ -134,6 +148,9 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%cz = select i1 %eof, i32 0, i32 %c");
     g.line("%b = trunc i32 %cz to i8");
     g.line("%p = call i8* @bf_gep_cell_ptr(%State* %S)");
+    if g.sanitize {
+        g.line("call void @tsan_write(%State* %S)");
+    }
     g.line("store i8 %b, i8* %p");
     g.line("ret void");
     g.indent -= 1;
