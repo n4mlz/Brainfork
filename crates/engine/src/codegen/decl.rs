@@ -11,6 +11,9 @@ pub fn decl_externals(g: &mut Codegen) {
     g.line("declare i32 @pthread_mutex_init(i8*, i8*)");
     g.line("declare i32 @pthread_mutex_lock(i8*)");
     g.line("declare i32 @pthread_mutex_unlock(i8*)");
+    g.line("declare i32 @pthread_cond_init(i8*, i8*)");
+    g.line("declare i32 @pthread_cond_wait(i8*, i8*)");
+    g.line("declare i32 @pthread_cond_broadcast(i8*)");
 
     if g.sanitize {
         g.line("declare i64 @pthread_self()");
@@ -188,6 +191,54 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%idx = call i64 @pop_lock(%State* %S)");
     g.line("%slot = call i8* @bf_lock_slot_addr(%State* %S, i64 %idx)");
     g.line("call i32 @pthread_mutex_unlock(i8* %slot)");
+    g.line("ret void");
+    g.indent -= 1;
+    g.line("}");
+
+    // Address of condvar slot: cond_slab + idx * stride
+    g.line("define internal i8* @bf_cond_slot_addr(%State* nocapture nonnull %S, i64 %idx) alwaysinline nounwind {");
+    g.indent += 1;
+    g.line("%csl = load i8*, i8** @cond_slab");
+    g.line(&format!("%coff = mul i64 %idx, {MUTEX_STRIDE}"));
+    g.line("%cslot = getelementptr i8, i8* %csl, i64 %coff");
+    g.line("ret i8* %cslot");
+    g.indent -= 1;
+    g.line("}");
+
+    // Address of cond-mutex slot: cond_mtx_slab + idx * stride
+    g.line("define internal i8* @bf_cmtx_slot_addr(%State* nocapture nonnull %S, i64 %idx) alwaysinline nounwind {");
+    g.indent += 1;
+    g.line("%msl = load i8*, i8** @cond_mtx_slab");
+    g.line(&format!("%moff = mul i64 %idx, {MUTEX_STRIDE}"));
+    g.line("%mslot = getelementptr i8, i8* %msl, i64 %moff");
+    g.line("ret i8* %mslot");
+    g.indent -= 1;
+    g.line("}");
+
+    // Wait: lock cond-mutex -> cond_wait -> unlock
+    g.line("define internal void @bf_wait(%State* nocapture nonnull %S) nounwind {");
+    g.indent += 1;
+    g.line("%fld_ptrW = getelementptr %State, %State* %S, i32 0, i32 1");
+    g.line("%idxW = load i64, i64* %fld_ptrW");
+    g.line("%cmW = call i8* @bf_cmtx_slot_addr(%State* %S, i64 %idxW)");
+    g.line("%cvW = call i8* @bf_cond_slot_addr(%State* %S, i64 %idxW)");
+    g.line("call i32 @pthread_mutex_lock(i8* %cmW)");
+    g.line("call i32 @pthread_cond_wait(i8* %cvW, i8* %cmW)");
+    g.line("call i32 @pthread_mutex_unlock(i8* %cmW)");
+    g.line("ret void");
+    g.indent -= 1;
+    g.line("}");
+
+    // Notify-all: lock cond-mutex -> broadcast -> unlock
+    g.line("define internal void @bf_notify(%State* nocapture nonnull %S) nounwind {");
+    g.indent += 1;
+    g.line("%fld_ptrN = getelementptr %State, %State* %S, i32 0, i32 1");
+    g.line("%idxN = load i64, i64* %fld_ptrN");
+    g.line("%cmN = call i8* @bf_cmtx_slot_addr(%State* %S, i64 %idxN)");
+    g.line("%cvN = call i8* @bf_cond_slot_addr(%State* %S, i64 %idxN)");
+    g.line("call i32 @pthread_mutex_lock(i8* %cmN)");
+    g.line("call i32 @pthread_cond_broadcast(i8* %cvN)");
+    g.line("call i32 @pthread_mutex_unlock(i8* %cmN)");
     g.line("ret void");
     g.indent -= 1;
     g.line("}");

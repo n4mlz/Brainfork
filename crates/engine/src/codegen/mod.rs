@@ -130,6 +130,8 @@ impl Codegen {
             "@tape = internal global [{TAPE_LEN} x i8] zeroinitializer"
         ));
         self.line("@mutex_slab = internal global i8* null");
+        self.line("@cond_slab = internal global i8* null");
+        self.line("@cond_mtx_slab = internal global i8* null");
         if self.sanitize {
             self.line(
                 "%State = type { i8*, i64, i8*, i64*, i64, i64, i64 } ; (tape, ptr, slab, stack, sp, cap, tid)",
@@ -153,6 +155,12 @@ impl Codegen {
         self.line(&format!("%slab_bytes = mul i64 {TAPE_LEN}, {MUTEX_STRIDE}"));
         self.line("%slab = call i8* @malloc(i64 %slab_bytes)");
         self.line("store i8* %slab, i8** @mutex_slab");
+        // Allocate & initialize cond_slab and cond_mtx_slab
+        self.line(&format!("%cond_bytes = mul i64 {TAPE_LEN}, {MUTEX_STRIDE}"));
+        self.line("%cslab = call i8* @malloc(i64 %cond_bytes)");
+        self.line("store i8* %cslab, i8** @cond_slab");
+        self.line("%cmslab = call i8* @malloc(i64 %cond_bytes)");
+        self.line("store i8* %cmslab, i8** @cond_mtx_slab");
         // pthread_mutex_init for every cell
         self.line("%i = alloca i64");
         self.line("store i64 0, i64* %i");
@@ -162,10 +170,16 @@ impl Codegen {
         self.line(&format!("%cond = icmp slt i64 %cur, {TAPE_LEN}"));
         self.line("br i1 %cond, label %init.body, label %init.end");
         self.label("init.body");
-        self.line("%sl0 = load i8*, i8** @mutex_slab");
         self.line(&format!("%off = mul i64 %cur, {MUTEX_STRIDE}"));
+        self.line("%sl0 = load i8*, i8** @mutex_slab");
         self.line("%slot = getelementptr i8, i8* %sl0, i64 %off");
         self.line("call i32 @pthread_mutex_init(i8* %slot, i8* null)");
+        self.line("%cl0 = load i8*, i8** @cond_slab");
+        self.line("%cslot = getelementptr i8, i8* %cl0, i64 %off");
+        self.line("call i32 @pthread_cond_init(i8* %cslot, i8* null)");
+        self.line("%ml0 = load i8*, i8** @cond_mtx_slab");
+        self.line("%mslot2 = getelementptr i8, i8* %ml0, i64 %off");
+        self.line("call i32 @pthread_mutex_init(i8* %mslot2, i8* null)");
         self.line("%cur1 = add i64 %cur, 1");
         self.line("store i64 %cur1, i64* %i");
         self.line("br label %init.loop");
