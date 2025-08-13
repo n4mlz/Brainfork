@@ -6,14 +6,11 @@ cd $(dirname $0)
 
 mkdir -p dist
 
-cargo build -p engine
-cp -f target/debug/engine dist/engine
-
 RUSTFLAGS="--emit=obj" cargo build -p runtime
 cp target/debug/libruntime.a dist/libruntime.a
 
-cargo run compile sample.bf --sanitize > dist/prog.ll
+cargo run compile sample.bf --sanitize > dist/main.ll
 
-clang dist/prog.ll dist/libruntime.a -o dist/out
+clang dist/main.ll dist/libruntime.a -o dist/out
 
 ./dist/out
