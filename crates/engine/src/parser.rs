@@ -15,6 +15,8 @@ pub enum Node {
     LockAcquire,
     LockRelease,
     Sleep(usize),
+    Wait,
+    Notify,
 }
 
 fn parse_parallel(iter: &mut Peekable<Iter<Token>>) -> Vec<Vec<Node>> {
@@ -64,6 +66,8 @@ fn parse_nodes(iter: &mut Peekable<Iter<Token>>, terminators: &[Token]) -> Vec<N
                 }
                 nodes.push(Node::Sleep(count));
             }
+            Token::Wait => nodes.push(Node::Wait),
+            Token::Notify => nodes.push(Node::Notify),
             _ => break,
         }
     }

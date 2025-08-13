@@ -14,6 +14,8 @@ pub enum Token {
     LockStart,
     LockEnd,
     Sleep,
+    Wait,
+    Notify,
 }
 
 pub fn lex(input: &str) -> Vec<Token> {
@@ -36,6 +38,8 @@ pub fn lex(input: &str) -> Vec<Token> {
             '(' => tokens.push(Token::LockStart),
             ')' => tokens.push(Token::LockEnd),
             '~' => tokens.push(Token::Sleep),
+            '^' => tokens.push(Token::Wait),
+            'v' => tokens.push(Token::Notify),
             ';' => {
                 while chars.peek().is_some() && *chars.peek().unwrap() != '\n' {
                     chars.next();

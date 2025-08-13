@@ -20,6 +20,7 @@ fn emit_node(g: &mut Codegen, s: &str, n: &Node) {
         Node::Sleep(t) => g.line(&format!("call void @bf_sleep(i32 {t})")),
         Node::Loop(body) => emit_loop(g, s, body),
         Node::Parallel(bs) => parallel::emit_parallel(g, s, bs),
+        _ => {} // TODO: Handle Node::Wait and Node::Notify
     }
 }
 

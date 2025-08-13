@@ -129,6 +129,7 @@ impl<R: RBound, W: WBound> ThreadState<R, W> {
                     let dur = Duration::from_millis(100 * (*count as u64));
                     thread::sleep(dur);
                 }
+                _ => continue, // TODO: Implement Wait and Notify
             }
         }
     }
