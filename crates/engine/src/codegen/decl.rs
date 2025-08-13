@@ -3,7 +3,7 @@ use super::{Codegen, MUTEX_STRIDE};
 pub fn decl_externals(g: &mut Codegen) {
     g.line("declare i32 @putchar(i32)");
     g.line("declare i32 @getchar()");
-    g.line("declare i32 @usleep(i32)");
+    g.line("declare i32 @nanosleep(%timespec*, %timespec*)");
     g.line("declare i8* @malloc(i64)");
     g.line("declare void @free(i8*)");
     g.line("declare i32 @pthread_create(i64*, i8*, i8* (i8*)*, i8*)");
@@ -167,8 +167,16 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     // Sleep (0.1s * ticks)
     g.line("define internal void @bf_sleep(i32 %ticks) nounwind {");
     g.indent += 1;
-    g.line("%u = mul i32 %ticks, 100000");
-    g.line("call i32 @usleep(i32 %u)");
+    g.line("%t64 = zext i32 %ticks to i64");
+    g.line("%ns_total = mul i64 %t64, 100000000");
+    g.line("%sec  = udiv i64 %ns_total, 1000000000");
+    g.line("%nsec = urem i64 %ns_total, 1000000000");
+    g.line("%ts = alloca %timespec");
+    g.line("%ts_sec  = getelementptr %timespec, %timespec* %ts, i32 0, i32 0");
+    g.line("%ts_nsec = getelementptr %timespec, %timespec* %ts, i32 0, i32 1");
+    g.line("store i64 %sec,  i64* %ts_sec");
+    g.line("store i64 %nsec, i64* %ts_nsec");
+    g.line("call i32 @nanosleep(%timespec* %ts, %timespec* null)");
     g.line("ret void");
     g.indent -= 1;
     g.line("}");

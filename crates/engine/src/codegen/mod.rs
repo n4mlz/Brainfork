@@ -141,6 +141,7 @@ impl Codegen {
                 "%State = type { i8*, i64, i8*, i64*, i64, i64 } ; (tape, ptr, slab, stack, sp, cap)",
             );
         }
+        self.line("%timespec = type { i64, i64 } ; (tv_sec, tv_nsec)");
         self.line("");
         decl::decl_externals(self);
         decl::define_runtime_helpers(self);
