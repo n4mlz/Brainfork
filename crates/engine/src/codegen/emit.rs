@@ -17,7 +17,7 @@ fn emit_node(g: &mut Codegen, s: &str, n: &Node) {
         Node::Input => g.line(&format!("call void @bf_input(%State* {s})")),
         Node::LockAcquire => g.line(&format!("call void @bf_lock_acquire(%State* {s})")),
         Node::LockRelease => g.line(&format!("call void @bf_lock_release(%State* {s})")),
-        Node::Wait(t) => g.line(&format!("call void @bf_wait(i32 {t})")),
+        Node::Sleep(t) => g.line(&format!("call void @bf_sleep(i32 {t})")),
         Node::Loop(body) => emit_loop(g, s, body),
         Node::Parallel(bs) => parallel::emit_parallel(g, s, bs),
     }

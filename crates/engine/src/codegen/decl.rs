@@ -161,8 +161,8 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.line("}");
 
-    // Wait (0.1s * ticks)
-    g.line("define internal void @bf_wait(i32 %ticks) nounwind {");
+    // Sleep (0.1s * ticks)
+    g.line("define internal void @bf_sleep(i32 %ticks) nounwind {");
     g.indent += 1;
     g.line("%u = mul i32 %ticks, 100000");
     g.line("call i32 @usleep(i32 %u)");

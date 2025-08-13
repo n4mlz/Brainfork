@@ -14,7 +14,7 @@ pub enum Node {
     Parallel(Vec<Vec<Node>>),
     LockAcquire,
     LockRelease,
-    Wait(usize),
+    Sleep(usize),
 }
 
 fn parse_parallel(iter: &mut Peekable<Iter<Token>>) -> Vec<Vec<Node>> {
@@ -56,13 +56,13 @@ fn parse_nodes(iter: &mut Peekable<Iter<Token>>, terminators: &[Token]) -> Vec<N
             }
             Token::LockStart => nodes.push(Node::LockAcquire),
             Token::LockEnd => nodes.push(Node::LockRelease),
-            Token::Wait => {
+            Token::Sleep => {
                 let mut count = 1;
-                while let Some(&&Token::Wait) = iter.peek() {
+                while let Some(&&Token::Sleep) = iter.peek() {
                     count += 1;
                     iter.next();
                 }
-                nodes.push(Node::Wait(count));
+                nodes.push(Node::Sleep(count));
             }
             _ => break,
         }

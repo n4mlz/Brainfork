@@ -125,7 +125,7 @@ impl<R: RBound, W: WBound> ThreadState<R, W> {
                         panic!("LockRelease without matching LockAcquire");
                     }
                 }
-                Node::Wait(count) => {
+                Node::Sleep(count) => {
                     let dur = Duration::from_millis(100 * (*count as u64));
                     thread::sleep(dur);
                 }
