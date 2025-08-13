@@ -33,6 +33,9 @@ fn emit_loop(g: &mut Codegen, s: &str, body: &[Node]) {
     g.line(&format!("br label %{l_cond}"));
     g.label(&l_cond);
     g.line(&format!("%p{id} = call i8* @bf_gep_cell_ptr(%State* {s})"));
+    if g.sanitize {
+        g.line(&format!("call void @tsan_read(%State* {s})"));
+    }
     g.line(&format!("%v{id} = load i8, i8* %p{id}"));
     g.line(&format!("%nz{id} = icmp ne i8 %v{id}, 0"));
     g.line(&format!("br i1 %nz{id}, label %{l_body}, label %{l_end}"));

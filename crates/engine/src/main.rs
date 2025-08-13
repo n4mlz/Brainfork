@@ -29,7 +29,8 @@ fn main() {
 
     match cmd.as_str() {
         "compile" | "c" => {
-            let ir = codegen::generate_ir(&nodes);
+            let sanitize = args.iter().any(|a| a == "--sanitize" || a == "-s");
+            let ir = codegen::generate_ir(&nodes, sanitize);
             println!("{ir}");
         }
         "interpret" | "i" => {

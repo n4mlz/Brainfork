@@ -1,6 +1,5 @@
-[package]
-name = "brainfock"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["crates/engine", "crates/runtime"]
 
-[dependencies]
+[workspace.dependencies]
+libc = "0.2"
