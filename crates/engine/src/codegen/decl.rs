@@ -3,6 +3,7 @@ use super::{Codegen, MUTEX_STRIDE};
 pub fn decl_externals(g: &mut Codegen) {
     g.line("declare i32 @putchar(i32)");
     g.line("declare i32 @getchar()");
+    g.line("declare i32 @fflush(i8*)");
     g.line("declare i32 @nanosleep(%timespec*, %timespec*)");
     g.line("declare i8* @malloc(i64)");
     g.line("declare void @free(i8*)");
@@ -144,6 +145,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%v = load i8, i8* %p");
     g.line("%w = zext i8 %v to i32");
     g.line("call i32 @putchar(i32 %w)");
+    g.line("call i32 @fflush(i8* null)");
     g.line("ret void");
     g.indent -= 1;
     g.line("}");
