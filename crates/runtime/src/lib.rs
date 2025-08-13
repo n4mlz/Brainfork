@@ -48,9 +48,11 @@ unsafe fn tsan_access(s: *const State, is_write: bool) {
     let tid = unsafe { libc::pthread_self() } as usize as u64;
     let mut map = HIST.lock().unwrap();
     let entry = map.entry(idx).or_default();
+    let tree = THREAD_TREE.lock().unwrap();
 
     if let Some(prev) = &entry.last
         && prev.tid != tid
+        && !tree.is_ancestor(prev.tid, tid)
         && prev.lockset.is_disjoint(&cur_locks)
         && (is_write || prev.is_write)
     {
@@ -80,4 +82,45 @@ pub unsafe extern "C" fn tsan_write(s: *const State) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsan_read(s: *const State) {
     unsafe { tsan_access(s, false) };
+}
+
+struct ThreadTree {
+    parent: HashMap<u64, u64>,
+}
+
+impl ThreadTree {
+    fn new() -> Self {
+        Self {
+            parent: HashMap::new(),
+        }
+    }
+
+    fn add_edge(&mut self, parent_id: u64, child_id: u64) {
+        self.parent.insert(child_id, parent_id);
+    }
+
+    fn is_descendant(&self, prev_id: u64, current_id: u64) -> bool {
+        let mut cur = current_id;
+        while let Some(&p) = self.parent.get(&cur) {
+            if p == prev_id {
+                return true;
+            }
+            cur = p;
+        }
+        false
+    }
+
+    fn is_ancestor(&self, id1: u64, id2: u64) -> bool {
+        self.is_descendant(id1, id2) || self.is_descendant(id2, id1)
+    }
+}
+
+static THREAD_TREE: LazyLock<Mutex<ThreadTree>> = LazyLock::new(|| Mutex::new(ThreadTree::new()));
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsan_post_parent_tid(parent_tid: u64) {
+    let child_tid = unsafe { libc::pthread_self() } as usize as u64;
+
+    let mut tree = THREAD_TREE.lock().unwrap();
+    tree.add_edge(parent_tid, child_tid);
 }
