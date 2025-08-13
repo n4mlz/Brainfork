@@ -105,6 +105,16 @@ impl Codegen {
             ));
             this.indent += 1;
             this.line("%S = bitcast i8* %arg to %State*");
+            if this.sanitize {
+                // Post parent thread ID to TSAN
+                this.line("%fld_tid = getelementptr %State, %State* %S, i32 0, i32 6");
+                this.line("%tid_parent = load i64, i64* %fld_tid");
+                this.line("call void @tsan_post_parent_tid(i64 %tid_parent)");
+
+                // Initialize thread ID if sanitization is enabled
+                this.line("%tid_self = call i64 @pthread_self()");
+                this.line("store i64 %tid_self, i64* %fld_tid");
+            }
             this.line(&format!("call void @thunk_{tname}(%State* %S)"));
             this.line("ret i8* null");
             this.indent -= 1;
@@ -120,9 +130,15 @@ impl Codegen {
             "@tape = internal global [{TAPE_LEN} x i8] zeroinitializer"
         ));
         self.line("@mutex_slab = internal global i8* null");
-        self.line(
-            "%State = type { i8*, i64, i8*, i64*, i64, i64 } ; (tape, ptr, slab, stack, sp, cap)",
-        );
+        if self.sanitize {
+            self.line(
+                "%State = type { i8*, i64, i8*, i64*, i64, i64, i64 } ; (tape, ptr, slab, stack, sp, cap, tid)",
+            );
+        } else {
+            self.line(
+                "%State = type { i8*, i64, i8*, i64*, i64, i64 } ; (tape, ptr, slab, stack, sp, cap)",
+            );
+        }
         self.line("");
         decl::decl_externals(self);
         decl::define_runtime_helpers(self);
@@ -196,6 +212,15 @@ impl Codegen {
             "{f5} = getelementptr %State, %State* %S, i32 0, i32 5"
         ));
         self.line(&format!("store i64 {LOCK_STACK_INIT}, i64* {f5}"));
+        if self.sanitize {
+            // Initialize thread ID if sanitization is enabled
+            self.line("%tid = call i64 @pthread_self()");
+            let f6 = self.fresh("fld");
+            self.line(&format!(
+                "{f6} = getelementptr %State, %State* %S, i32 0, i32 6"
+            ));
+            self.line(&format!("store i64 %tid, i64* {f6}"));
+        }
         // Run top-level program
         self.line("call void @thunk_main(%State* %S)");
         self.line("ret i32 0");

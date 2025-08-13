@@ -12,9 +12,14 @@ pub fn decl_externals(g: &mut Codegen) {
     g.line("declare i32 @pthread_mutex_lock(i8*)");
     g.line("declare i32 @pthread_mutex_unlock(i8*)");
 
-    // Thread sanitizer functions
-    g.line("declare void @tsan_read(%State*)");
-    g.line("declare void @tsan_write(%State*)");
+    if g.sanitize {
+        g.line("declare i64 @pthread_self()");
+
+        // Thread sanitizer functions
+        g.line("declare void @tsan_post_parent_tid(i64)");
+        g.line("declare void @tsan_read(%State*)");
+        g.line("declare void @tsan_write(%State*)");
+    }
 
     // memcpy intrinsic (used for expanding the lock stack)
     g.line("declare void @llvm.memcpy.p0i8.p0i8.i64(i8* nocapture writeonly, i8* nocapture readonly, i64, i1 immarg)");

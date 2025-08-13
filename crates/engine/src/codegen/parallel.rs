@@ -93,6 +93,21 @@ pub fn emit_parallel(g: &mut Codegen, parent_s: &str, branches: &[Vec<Node>]) {
         g.line(&format!(
             "store i64 {LOCK_STACK_INIT}, i64* %fld_child_cap{pid}_{i}"
         ));
+        if g.sanitize {
+            // thread ID
+            g.line(&format!(
+                "%fld_parent_tid{pid}_{i} = getelementptr %State,%State* {parent_s}, i32 0, i32 6"
+            ));
+            g.line(&format!(
+                "%tid{pid}_{i} = load i64, i64* %fld_parent_tid{pid}_{i}"
+            ));
+            g.line(&format!(
+                "%fld_child_tid{pid}_{i} = getelementptr %State,%State* {child}, i32 0, i32 6"
+            ));
+            g.line(&format!(
+                "store i64 %tid{pid}_{i}, i64* %fld_child_tid{pid}_{i}"
+            ));
+        }
         // pthread_create
         g.line(&format!(
             "%tptr{pid}_{i} = getelementptr [{k} x i64], [{k} x i64]* %threads{pid}, i64 0, i64 {i}"
