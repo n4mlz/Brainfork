@@ -85,4 +85,13 @@ pub unsafe extern "C" fn tsan_read(s: *const State) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsan_fork(parent_tid: u64) {
     let child_tid = unsafe { libc::pthread_self() } as usize as u64;
+
+    println!("[TSAN] fork: parent_tid={parent_tid}, child_tid={child_tid}");
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsan_join(child_tid: u64) {
+    let parent_tid = unsafe { libc::pthread_self() } as usize as u64;
+
+    println!("[TSAN] join: parent_tid={parent_tid}, child_tid={child_tid}");
 }
