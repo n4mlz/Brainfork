@@ -125,7 +125,9 @@ pub fn emit_parallel(g: &mut Codegen, parent_s: &str, branches: &[Vec<Node>]) {
         g.line(&format!(
             "call i32 @pthread_join(i64 %tload{pid}_{i}, i8** null)"
         ));
-        g.line(&format!("call void @tsan_join(i64 %tload{pid}_{i})"));
+        if g.sanitize {
+            g.line(&format!("call void @tsan_join(i64 %tload{pid}_{i})"));
+        }
     }
 }
 

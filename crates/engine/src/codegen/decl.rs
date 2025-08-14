@@ -22,6 +22,8 @@ pub fn decl_externals(g: &mut Codegen) {
         // Thread sanitizer functions
         g.line("declare void @tsan_read(%State*)");
         g.line("declare void @tsan_write(%State*)");
+        g.line("declare void @tsan_acquire(%State*, i64)");
+        g.line("declare void @tsan_release(%State*, i64)");
         g.line("declare void @tsan_fork(i64)");
         g.line("declare void @tsan_join(i64)");
     }
@@ -192,6 +194,9 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%slot = call i8* @bf_lock_slot_addr(%State* %S, i64 %idx)");
     g.line("call i32 @pthread_mutex_lock(i8* %slot)");
     g.line("call void @push_lock(%State* %S, i64 %idx)");
+    if g.sanitize {
+        g.line("call void @tsan_acquire(%State* %S, i64 %idx)");
+    }
     g.line("ret void");
     g.indent -= 1;
     g.line("}");
@@ -202,6 +207,9 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%idx = call i64 @pop_lock(%State* %S)");
     g.line("%slot = call i8* @bf_lock_slot_addr(%State* %S, i64 %idx)");
     g.line("call i32 @pthread_mutex_unlock(i8* %slot)");
+    if g.sanitize {
+        g.line("call void @tsan_release(%State* %S, i64 %idx)");
+    }
     g.line("ret void");
     g.indent -= 1;
     g.line("}");
