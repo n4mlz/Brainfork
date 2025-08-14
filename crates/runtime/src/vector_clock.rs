@@ -29,12 +29,20 @@ fn join_in(a: &mut VectorClock, b: &VectorClock) {
     }
 }
 
+#[derive(Clone)]
+struct WaitMark {
+    id: Cell,
+    seen: VectorClock,
+}
+
 #[derive(Default)]
 pub struct RaceDetector {
     ct: HashMap<Tid, VectorClock>,
     rx: Vec<VectorClock>,
     wx: Vec<VectorClock>,
     lm: Vec<VectorClock>,
+    nclock: Vec<VectorClock>,
+    wait_seen: HashMap<Tid, WaitMark>,
 }
 
 impl RaceDetector {
@@ -44,6 +52,8 @@ impl RaceDetector {
             rx: vec![HashMap::new(); TAPE_LEN],
             wx: vec![HashMap::new(); TAPE_LEN],
             lm: vec![HashMap::new(); TAPE_LEN],
+            nclock: vec![HashMap::new(); TAPE_LEN],
+            wait_seen: HashMap::new(),
         }
     }
 
@@ -112,6 +122,32 @@ impl RaceDetector {
         join_in(ct, &cu);
         tick(ct, t);
     }
+
+    pub fn pre_wait(&mut self, t: Tid, id: Cell) {
+        tick(self.ct_mut(t), t);
+        let seen = self.nclock[id as usize].clone();
+        self.wait_seen.insert(t, WaitMark { id, seen });
+    }
+
+    pub fn post_wait(&mut self, t: Tid, id: Cell) {
+        if let Some(wm) = self.wait_seen.remove(&t)
+            && wm.id == id
+        {
+            let now = self.nclock[id as usize].clone();
+            if !leq(&now, &wm.seen) {
+                let ct = self.ct_mut(t);
+                join_in(ct, &now);
+            }
+        }
+        tick(self.ct_mut(t), t);
+    }
+
+    pub fn notify(&mut self, t: Tid, id: Cell) {
+        let ct = self.ct_mut(t);
+        tick(ct, t);
+        let snapshot = ct.clone();
+        join_in(&mut self.nclock[id as usize], &snapshot);
+    }
 }
 
 static VECTOR_CLOCK: LazyLock<Mutex<RaceDetector>> =
@@ -157,4 +193,28 @@ pub fn vector_clock_join(parent_tid: Tid, child_tid: Tid) {
     let mut vector_clock = VECTOR_CLOCK.lock().unwrap();
 
     vector_clock.join(parent_tid, child_tid);
+}
+
+pub fn vector_clock_pre_wait(s: *const State) {
+    let mut vector_clock = VECTOR_CLOCK.lock().unwrap();
+    let tid = unsafe { libc::pthread_self() } as usize as Tid;
+    let s = unsafe { s.as_ref().expect("State pointer is null") };
+
+    vector_clock.pre_wait(tid, s.ptr_index);
+}
+
+pub fn vector_clock_post_wait(s: *const State) {
+    let mut vector_clock = VECTOR_CLOCK.lock().unwrap();
+    let tid = unsafe { libc::pthread_self() } as usize as Tid;
+    let s = unsafe { s.as_ref().expect("State pointer is null") };
+
+    vector_clock.post_wait(tid, s.ptr_index);
+}
+
+pub fn vector_clock_notify(s: *const State) {
+    let mut vector_clock = VECTOR_CLOCK.lock().unwrap();
+    let tid = unsafe { libc::pthread_self() } as usize as Tid;
+    let s = unsafe { s.as_ref().expect("State pointer is null") };
+
+    vector_clock.notify(tid, s.ptr_index);
 }

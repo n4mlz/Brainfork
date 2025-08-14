@@ -86,3 +86,18 @@ pub unsafe extern "C" fn tsan_join(child_tid: Tid) {
     let parent_tid = unsafe { libc::pthread_self() } as usize as Tid;
     vector_clock::vector_clock_join(parent_tid, child_tid);
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsan_pre_wait(s: *const State) {
+    vector_clock::vector_clock_pre_wait(s);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsan_post_wait(s: *const State) {
+    vector_clock::vector_clock_post_wait(s);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn tsan_notify(s: *const State) {
+    vector_clock::vector_clock_notify(s);
+}

@@ -26,6 +26,9 @@ pub fn decl_externals(g: &mut Codegen) {
         g.line("declare void @tsan_release(%State*, i64)");
         g.line("declare void @tsan_fork(i64)");
         g.line("declare void @tsan_join(i64)");
+        g.line("declare void @tsan_pre_wait(%State*)");
+        g.line("declare void @tsan_post_wait(%State*)");
+        g.line("declare void @tsan_notify(%State*)");
     }
 
     // memcpy intrinsic (used for expanding the lock stack)
@@ -242,13 +245,19 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%cmW = call i8* @bf_cmtx_slot_addr(%State* %S, i64 %idxW)");
     g.line("%cvW = call i8* @bf_cond_slot_addr(%State* %S, i64 %idxW)");
     g.line("call i32 @pthread_mutex_lock(i8* %cmW)");
+    if g.sanitize {
+        g.line("call void @tsan_pre_wait(%State* %S)");
+    }
     g.line("call i32 @pthread_cond_wait(i8* %cvW, i8* %cmW)");
+    if g.sanitize {
+        g.line("call void @tsan_post_wait(%State* %S)");
+    }
     g.line("call i32 @pthread_mutex_unlock(i8* %cmW)");
     g.line("ret void");
     g.indent -= 1;
     g.line("}");
 
-    // Notify-all: lock cond-mutex -> broadcast -> unlock
+    // Notify: lock cond-mutex -> broadcast -> unlock
     g.line("define internal void @bf_notify(%State* nocapture nonnull %S) nounwind {");
     g.indent += 1;
     g.line("%fld_ptrN = getelementptr %State, %State* %S, i32 0, i32 1");
@@ -256,6 +265,9 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%cmN = call i8* @bf_cmtx_slot_addr(%State* %S, i64 %idxN)");
     g.line("%cvN = call i8* @bf_cond_slot_addr(%State* %S, i64 %idxN)");
     g.line("call i32 @pthread_mutex_lock(i8* %cmN)");
+    if g.sanitize {
+        g.line("call void @tsan_notify(%State* %S)");
+    }
     g.line("call i32 @pthread_cond_broadcast(i8* %cvN)");
     g.line("call i32 @pthread_mutex_unlock(i8* %cmN)");
     g.line("ret void");
