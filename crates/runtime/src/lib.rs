@@ -83,6 +83,6 @@ pub unsafe extern "C" fn tsan_read(s: *const State) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tsan_post_parent_tid(parent_tid: u64) {
+pub unsafe extern "C" fn tsan_fork(parent_tid: u64) {
     let child_tid = unsafe { libc::pthread_self() } as usize as u64;
 }

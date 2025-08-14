@@ -20,9 +20,9 @@ pub fn decl_externals(g: &mut Codegen) {
         g.line("declare i64 @pthread_self()");
 
         // Thread sanitizer functions
-        g.line("declare void @tsan_post_parent_tid(i64)");
         g.line("declare void @tsan_read(%State*)");
         g.line("declare void @tsan_write(%State*)");
+        g.line("declare void @tsan_fork(i64)");
     }
 
     // memcpy intrinsic (used for expanding the lock stack)

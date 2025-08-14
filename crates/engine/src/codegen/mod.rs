@@ -109,7 +109,7 @@ impl Codegen {
                 // Post parent thread ID to TSAN
                 this.line("%fld_tid = getelementptr %State, %State* %S, i32 0, i32 6");
                 this.line("%tid_parent = load i64, i64* %fld_tid");
-                this.line("call void @tsan_post_parent_tid(i64 %tid_parent)");
+                this.line("call void @tsan_fork(i64 %tid_parent)");
 
                 // Initialize thread ID if sanitization is enabled
                 this.line("%tid_self = call i64 @pthread_self()");
