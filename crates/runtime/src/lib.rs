@@ -15,12 +15,12 @@ pub struct State {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsan_write(s: *const State) {
-    unsafe { lockset::tsan_access(s, true) };
+    unsafe { lockset::lockset_check(s, true) };
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsan_read(s: *const State) {
-    unsafe { lockset::tsan_access(s, false) };
+    unsafe { lockset::lockset_check(s, false) };
 }
 
 #[unsafe(no_mangle)]

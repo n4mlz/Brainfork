@@ -3,15 +3,6 @@ use std::sync::{LazyLock, Mutex};
 
 use crate::State;
 
-fn current_lockset(s: &State) -> HashSet<i64> {
-    let sp = s.lock_sp;
-    if sp <= 0 || s.lock_stack.is_null() {
-        return HashSet::new();
-    }
-    let src: &[i64] = unsafe { core::slice::from_raw_parts(s.lock_stack, sp as usize) };
-    src.iter().copied().collect()
-}
-
 struct Access {
     tid: u64,
     is_write: bool,
@@ -25,7 +16,16 @@ struct CellHist {
 
 static HIST: LazyLock<Mutex<HashMap<i64, CellHist>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub unsafe fn tsan_access(s: *const State, is_write: bool) {
+fn current_lockset(s: &State) -> HashSet<i64> {
+    let sp = s.lock_sp;
+    if sp <= 0 || s.lock_stack.is_null() {
+        return HashSet::new();
+    }
+    let src: &[i64] = unsafe { core::slice::from_raw_parts(s.lock_stack, sp as usize) };
+    src.iter().copied().collect()
+}
+
+pub unsafe fn lockset_check(s: *const State, is_write: bool) {
     let s = unsafe { s.as_ref().expect("State pointer is null") };
 
     let idx = s.ptr_index;
