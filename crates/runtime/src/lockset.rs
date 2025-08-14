@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex};
 
-use crate::State;
+use crate::{Cell, State, Tid};
 
 struct Access {
-    tid: u64,
+    tid: Tid,
     is_write: bool,
-    lockset: HashSet<i64>,
+    lockset: HashSet<Cell>,
 }
 
 #[derive(Default)]
@@ -14,14 +14,15 @@ struct CellHist {
     last: Option<Access>,
 }
 
-static HIST: LazyLock<Mutex<HashMap<i64, CellHist>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static HIST: LazyLock<Mutex<HashMap<Cell, CellHist>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn current_lockset(s: &State) -> HashSet<i64> {
+fn current_lockset(s: &State) -> HashSet<Cell> {
     let sp = s.lock_sp;
     if sp <= 0 || s.lock_stack.is_null() {
         return HashSet::new();
     }
-    let src: &[i64] = unsafe { core::slice::from_raw_parts(s.lock_stack, sp as usize) };
+    let src: &[Cell] = unsafe { core::slice::from_raw_parts(s.lock_stack, sp as usize) };
     src.iter().copied().collect()
 }
 
@@ -34,7 +35,7 @@ pub unsafe fn lockset_check(s: *const State, is_write: bool) {
         return;
     }
 
-    let tid = unsafe { libc::pthread_self() } as usize as u64;
+    let tid = unsafe { libc::pthread_self() } as usize as Tid;
     let mut map = HIST.lock().unwrap();
     let entry = map.entry(idx).or_default();
 
