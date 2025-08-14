@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex};
 
-use crate::{Cell, State, Tid};
+use crate::{Cell, State, Tid, TsanError};
 
 struct Access {
     tid: Tid,
@@ -26,13 +26,13 @@ fn current_lockset(s: &State) -> HashSet<Cell> {
     src.iter().copied().collect()
 }
 
-pub unsafe fn lockset_check(s: *const State, is_write: bool) {
+pub unsafe fn lockset_check(s: *const State, is_write: bool) -> Result<(), TsanError> {
     let s = unsafe { s.as_ref().expect("State pointer is null") };
 
     let idx = s.ptr_index;
     let cur_locks = current_lockset(s);
     if cur_locks.contains(&idx) {
-        return;
+        return Ok(());
     }
 
     let tid = unsafe { libc::pthread_self() } as usize as Tid;
@@ -44,15 +44,10 @@ pub unsafe fn lockset_check(s: *const State, is_write: bool) {
         && prev.lockset.is_disjoint(&cur_locks)
         && (is_write || prev.is_write)
     {
-        eprintln!(
-            "[TSAN] race({}) cell={} prev{{tid:{}, write:{}}} now{{tid:{}, write:{}}}",
-            if is_write { "write" } else { "read" },
-            idx,
-            prev.tid,
-            prev.is_write,
-            tid,
-            is_write
-        );
+        return Err(TsanError::Race {
+            cell: idx,
+            is_write: is_write || prev.is_write,
+        });
     }
 
     entry.last = Some(Access {
@@ -60,4 +55,5 @@ pub unsafe fn lockset_check(s: *const State, is_write: bool) {
         is_write,
         lockset: cur_locks,
     });
+    Ok(())
 }
