@@ -3,7 +3,7 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
-use crate::{Cell, State, TAPE_LEN, Tid, TsanError};
+use crate::{Cell, Race, State, TAPE_LEN, Tid};
 
 type VectorClock = HashMap<Tid, u64>;
 
@@ -63,10 +63,10 @@ impl RaceDetector {
         join_in(ct, &lm);
     }
 
-    pub fn rd(&mut self, t: Tid, x: Cell) -> Result<(), TsanError> {
+    pub fn rd(&mut self, t: Tid, x: Cell) -> Result<(), Race> {
         let ct_snapshot = self.ct_mut(t).clone();
         if !leq(&self.wx[x as usize], &ct_snapshot) {
-            return Err(TsanError::Race {
+            return Err(Race {
                 cell: x,
                 is_write: true,
             });
@@ -76,16 +76,16 @@ impl RaceDetector {
         Ok(())
     }
 
-    pub fn wr(&mut self, t: Tid, x: Cell) -> Result<(), TsanError> {
+    pub fn wr(&mut self, t: Tid, x: Cell) -> Result<(), Race> {
         let ct_snapshot = self.ct_mut(t).clone();
         if !leq(&self.wx[x as usize], &ct_snapshot) {
-            return Err(TsanError::Race {
+            return Err(Race {
                 cell: x,
                 is_write: true,
             });
         }
         if !leq(&self.rx[x as usize], &ct_snapshot) {
-            return Err(TsanError::Race {
+            return Err(Race {
                 cell: x,
                 is_write: false,
             });
@@ -117,7 +117,7 @@ impl RaceDetector {
 static VECTOR_CLOCK: LazyLock<Mutex<RaceDetector>> =
     LazyLock::new(|| Mutex::new(RaceDetector::new()));
 
-pub fn vector_clock_write(s: *const State) -> Result<(), TsanError> {
+pub fn vector_clock_write(s: *const State) -> Result<(), Race> {
     let mut vector_clock = VECTOR_CLOCK.lock().unwrap();
     let tid = unsafe { libc::pthread_self() } as usize as Tid;
     let s = unsafe { s.as_ref().expect("State pointer is null") };
@@ -125,7 +125,7 @@ pub fn vector_clock_write(s: *const State) -> Result<(), TsanError> {
     vector_clock.wr(tid, s.ptr_index)
 }
 
-pub fn vector_clock_read(s: *const State) -> Result<(), TsanError> {
+pub fn vector_clock_read(s: *const State) -> Result<(), Race> {
     let mut vector_clock = VECTOR_CLOCK.lock().unwrap();
     let tid = unsafe { libc::pthread_self() } as usize as Tid;
     let s = unsafe { s.as_ref().expect("State pointer is null") };

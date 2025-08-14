@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex};
 
-use crate::{Cell, State, Tid, TsanError};
+use crate::{Cell, Race, State, Tid};
 
 struct Access {
     tid: Tid,
@@ -26,30 +26,26 @@ fn current_lockset(s: &State) -> HashSet<Cell> {
     src.iter().copied().collect()
 }
 
-pub unsafe fn lockset_check(s: *const State, is_write: bool) -> Result<(), TsanError> {
+pub unsafe fn lockset_check(s: *const State, is_write: bool) -> Result<(), Race> {
     let s = unsafe { s.as_ref().expect("State pointer is null") };
-
     let idx = s.ptr_index;
     let cur_locks = current_lockset(s);
     if cur_locks.contains(&idx) {
         return Ok(());
     }
-
     let tid = unsafe { libc::pthread_self() } as usize as Tid;
     let mut map = HIST.lock().unwrap();
     let entry = map.entry(idx).or_default();
-
     if let Some(prev) = &entry.last
         && prev.tid != tid
         && prev.lockset.is_disjoint(&cur_locks)
         && (is_write || prev.is_write)
     {
-        return Err(TsanError::Race {
+        return Err(Race {
             cell: idx,
             is_write: is_write || prev.is_write,
         });
     }
-
     entry.last = Some(Access {
         tid,
         is_write,

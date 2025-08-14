@@ -8,23 +8,6 @@ type Cell = i64;
 
 const TAPE_LEN: usize = 30000;
 
-#[derive(Debug, Clone)]
-pub enum TsanError {
-    Race { cell: Cell, is_write: bool },
-}
-
-impl core::fmt::Display for TsanError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            TsanError::Race { cell, is_write } => write!(
-                f,
-                "[TSAN] race({}) cell={cell}",
-                if *is_write { "write" } else { "read" }
-            ),
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Debug)]
 pub struct State {
@@ -36,43 +19,50 @@ pub struct State {
     lock_cap: i64,
 }
 
-fn report_if_both_race(lockset_res: Result<(), TsanError>, vc_res: Result<(), TsanError>) {
-    if let (
-        Err(TsanError::Race {
-            cell: c1,
-            is_write: w1,
-        }),
-        Err(TsanError::Race {
-            cell: c2,
-            is_write: w2,
-        }),
-    ) = (lockset_res, vc_res)
-        && c1 == c2
-    {
-        eprintln!(
-            "{}",
-            TsanError::Race {
-                cell: c1,
-                is_write: w1 || w2,
-            }
-        );
+#[derive(Debug, Clone, Copy)]
+pub struct Race {
+    pub cell: Cell,
+    pub is_write: bool,
+}
+
+impl core::fmt::Display for Race {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "race({}) cell={}",
+            if self.is_write { "write" } else { "read" },
+            self.cell
+        )
+    }
+}
+
+fn merge_race(r1: Race, r2: Race) -> Race {
+    Race {
+        cell: r1.cell,
+        is_write: r1.is_write || r2.is_write,
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsan_write(s: *const State) {
-    report_if_both_race(
-        unsafe { lockset::lockset_check(s, true) },
-        vector_clock::vector_clock_write(s),
-    );
+    let res1 = unsafe { lockset::lockset_check(s, true) };
+    let res2 = vector_clock::vector_clock_write(s);
+
+    if let (Err(r1), Err(r2)) = (res1, res2) {
+        let combined = merge_race(r1, r2);
+        eprintln!("[TSan] {combined}");
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tsan_read(s: *const State) {
-    report_if_both_race(
-        unsafe { lockset::lockset_check(s, false) },
-        vector_clock::vector_clock_read(s),
-    );
+    let res1 = unsafe { lockset::lockset_check(s, false) };
+    let res2 = vector_clock::vector_clock_read(s);
+
+    if let (Err(r1), Err(r2)) = (res1, res2) {
+        let combined = merge_race(r1, r2);
+        eprintln!("[TSan] {combined}");
+    }
 }
 
 #[unsafe(no_mangle)]
