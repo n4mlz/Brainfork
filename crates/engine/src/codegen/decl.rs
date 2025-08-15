@@ -3,7 +3,8 @@ use super::{Codegen, MUTEX_STRIDE};
 pub fn decl_externals(g: &mut Codegen) {
     g.line("declare i32 @putchar(i32)");
     g.line("declare i32 @getchar()");
-    g.line("declare i32 @usleep(i32)");
+    g.line("declare i32 @fflush(i8*)");
+    g.line("declare i32 @nanosleep(%timespec*, %timespec*)");
     g.line("declare i8* @malloc(i64)");
     g.line("declare void @free(i8*)");
     g.line("declare i32 @pthread_create(i64*, i8*, i8* (i8*)*, i8*)");
@@ -11,14 +12,23 @@ pub fn decl_externals(g: &mut Codegen) {
     g.line("declare i32 @pthread_mutex_init(i8*, i8*)");
     g.line("declare i32 @pthread_mutex_lock(i8*)");
     g.line("declare i32 @pthread_mutex_unlock(i8*)");
+    g.line("declare i32 @pthread_cond_init(i8*, i8*)");
+    g.line("declare i32 @pthread_cond_wait(i8*, i8*)");
+    g.line("declare i32 @pthread_cond_broadcast(i8*)");
 
     if g.sanitize {
         g.line("declare i64 @pthread_self()");
 
         // Thread sanitizer functions
-        g.line("declare void @tsan_post_parent_tid(i64)");
         g.line("declare void @tsan_read(%State*)");
         g.line("declare void @tsan_write(%State*)");
+        g.line("declare void @tsan_acquire(%State*, i64)");
+        g.line("declare void @tsan_release(%State*, i64)");
+        g.line("declare void @tsan_fork(i64)");
+        g.line("declare void @tsan_join(i64)");
+        g.line("declare void @tsan_pre_wait(%State*)");
+        g.line("declare void @tsan_post_wait(%State*)");
+        g.line("declare void @tsan_notify(%State*)");
     }
 
     // memcpy intrinsic (used for expanding the lock stack)
@@ -141,6 +151,7 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%v = load i8, i8* %p");
     g.line("%w = zext i8 %v to i32");
     g.line("call i32 @putchar(i32 %w)");
+    g.line("call i32 @fflush(i8* null)");
     g.line("ret void");
     g.indent -= 1;
     g.line("}");
@@ -161,11 +172,19 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.indent -= 1;
     g.line("}");
 
-    // Wait (0.1s * ticks)
-    g.line("define internal void @bf_wait(i32 %ticks) nounwind {");
+    // Sleep (0.1s * ticks)
+    g.line("define internal void @bf_sleep(i32 %ticks) nounwind {");
     g.indent += 1;
-    g.line("%u = mul i32 %ticks, 100000");
-    g.line("call i32 @usleep(i32 %u)");
+    g.line("%t64 = zext i32 %ticks to i64");
+    g.line("%ns_total = mul i64 %t64, 100000000");
+    g.line("%sec  = udiv i64 %ns_total, 1000000000");
+    g.line("%nsec = urem i64 %ns_total, 1000000000");
+    g.line("%ts = alloca %timespec");
+    g.line("%ts_sec  = getelementptr %timespec, %timespec* %ts, i32 0, i32 0");
+    g.line("%ts_nsec = getelementptr %timespec, %timespec* %ts, i32 0, i32 1");
+    g.line("store i64 %sec,  i64* %ts_sec");
+    g.line("store i64 %nsec, i64* %ts_nsec");
+    g.line("call i32 @nanosleep(%timespec* %ts, %timespec* null)");
     g.line("ret void");
     g.indent -= 1;
     g.line("}");
@@ -178,6 +197,9 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%slot = call i8* @bf_lock_slot_addr(%State* %S, i64 %idx)");
     g.line("call i32 @pthread_mutex_lock(i8* %slot)");
     g.line("call void @push_lock(%State* %S, i64 %idx)");
+    if g.sanitize {
+        g.line("call void @tsan_acquire(%State* %S, i64 %idx)");
+    }
     g.line("ret void");
     g.indent -= 1;
     g.line("}");
@@ -188,6 +210,66 @@ pub fn define_runtime_helpers(g: &mut Codegen) {
     g.line("%idx = call i64 @pop_lock(%State* %S)");
     g.line("%slot = call i8* @bf_lock_slot_addr(%State* %S, i64 %idx)");
     g.line("call i32 @pthread_mutex_unlock(i8* %slot)");
+    if g.sanitize {
+        g.line("call void @tsan_release(%State* %S, i64 %idx)");
+    }
+    g.line("ret void");
+    g.indent -= 1;
+    g.line("}");
+
+    // Address of condvar slot: cond_slab + idx * stride
+    g.line("define internal i8* @bf_cond_slot_addr(%State* nocapture nonnull %S, i64 %idx) alwaysinline nounwind {");
+    g.indent += 1;
+    g.line("%csl = load i8*, i8** @cond_slab");
+    g.line(&format!("%coff = mul i64 %idx, {MUTEX_STRIDE}"));
+    g.line("%cslot = getelementptr i8, i8* %csl, i64 %coff");
+    g.line("ret i8* %cslot");
+    g.indent -= 1;
+    g.line("}");
+
+    // Address of cond-mutex slot: cond_mtx_slab + idx * stride
+    g.line("define internal i8* @bf_cmtx_slot_addr(%State* nocapture nonnull %S, i64 %idx) alwaysinline nounwind {");
+    g.indent += 1;
+    g.line("%msl = load i8*, i8** @cond_mtx_slab");
+    g.line(&format!("%moff = mul i64 %idx, {MUTEX_STRIDE}"));
+    g.line("%mslot = getelementptr i8, i8* %msl, i64 %moff");
+    g.line("ret i8* %mslot");
+    g.indent -= 1;
+    g.line("}");
+
+    // Wait: lock cond-mutex -> cond_wait -> unlock
+    g.line("define internal void @bf_wait(%State* nocapture nonnull %S) nounwind {");
+    g.indent += 1;
+    g.line("%fld_ptrW = getelementptr %State, %State* %S, i32 0, i32 1");
+    g.line("%idxW = load i64, i64* %fld_ptrW");
+    g.line("%cmW = call i8* @bf_cmtx_slot_addr(%State* %S, i64 %idxW)");
+    g.line("%cvW = call i8* @bf_cond_slot_addr(%State* %S, i64 %idxW)");
+    g.line("call i32 @pthread_mutex_lock(i8* %cmW)");
+    if g.sanitize {
+        g.line("call void @tsan_pre_wait(%State* %S)");
+    }
+    g.line("call i32 @pthread_cond_wait(i8* %cvW, i8* %cmW)");
+    if g.sanitize {
+        g.line("call void @tsan_post_wait(%State* %S)");
+    }
+    g.line("call i32 @pthread_mutex_unlock(i8* %cmW)");
+    g.line("ret void");
+    g.indent -= 1;
+    g.line("}");
+
+    // Notify: lock cond-mutex -> broadcast -> unlock
+    g.line("define internal void @bf_notify(%State* nocapture nonnull %S) nounwind {");
+    g.indent += 1;
+    g.line("%fld_ptrN = getelementptr %State, %State* %S, i32 0, i32 1");
+    g.line("%idxN = load i64, i64* %fld_ptrN");
+    g.line("%cmN = call i8* @bf_cmtx_slot_addr(%State* %S, i64 %idxN)");
+    g.line("%cvN = call i8* @bf_cond_slot_addr(%State* %S, i64 %idxN)");
+    g.line("call i32 @pthread_mutex_lock(i8* %cmN)");
+    if g.sanitize {
+        g.line("call void @tsan_notify(%State* %S)");
+    }
+    g.line("call i32 @pthread_cond_broadcast(i8* %cvN)");
+    g.line("call i32 @pthread_mutex_unlock(i8* %cmN)");
     g.line("ret void");
     g.indent -= 1;
     g.line("}");
